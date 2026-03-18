@@ -38,13 +38,11 @@ def _ensure_project_name_unique(db: Session, name: str, exclude_id: str | None =
 def create_project(db: Session, payload: ProjectCreateDTO) -> dict:
     _ensure_project_name_unique(db, payload.name)
     _get_required_config(db, payload.extract_config_id, "extract")
-    _get_required_config(db, payload.qa_config_id, "qa")
 
     project = Project(
         name=payload.name,
         description=payload.description,
         extract_config_id=payload.extract_config_id,
-        qa_config_id=payload.qa_config_id,
         status="ready",
     )
     db.add(project)
@@ -74,9 +72,6 @@ def update_project(db: Session, project_id: str, payload: ProjectUpdateDTO) -> d
 
     if "extract_config_id" in data:
         _get_required_config(db, data["extract_config_id"], "extract")
-
-    if "qa_config_id" in data:
-        _get_required_config(db, data["qa_config_id"], "qa")
 
     for field, value in data.items():
         setattr(project, field, value)

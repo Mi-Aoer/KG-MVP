@@ -120,6 +120,18 @@ def _serialize_start_response(batch: ImportBatch, queued: int | None = None) -> 
     return data
 
 
+def _load_provider_options(raw_value: str | None) -> dict | None:
+    if raw_value is None:
+        return None
+    try:
+        data = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 def start_batch_extract(
     db: Session,
     background_tasks: BackgroundTasks,
@@ -223,6 +235,7 @@ def _process_source(db: Session, batch: ImportBatch, config: ModelConfig, source
         "model": config.model_name,
         "instruction": batch.instruction or "",
         "input": source.input_text,
+        "provider_options": _load_provider_options(config.provider_options),
     }
     source.request_payload = json.dumps(request_payload, ensure_ascii=False)
     db.commit()
@@ -236,6 +249,7 @@ def _process_source(db: Session, batch: ImportBatch, config: ModelConfig, source
             instruction=batch.instruction or "",
             input_text=source.input_text,
             timeout_seconds=config.timeout_seconds,
+            provider_options=_load_provider_options(config.provider_options),
         )
     except LLMClientError as exc:
         source.request_status = "failed"

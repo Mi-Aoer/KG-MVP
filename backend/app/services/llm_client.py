@@ -1,5 +1,6 @@
 import json
 import time
+from copy import deepcopy
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
@@ -29,24 +30,30 @@ class OpenAICompatibleClient:
             content = input_text
         return [{"role": "user", "content": content}]
 
-    def _build_request_options(self, base_url: str, model_name: str, instruction: str) -> dict:
+    def _build_request_options(
+        self,
+        base_url: str,
+        model_name: str,
+        instruction: str,
+        provider_options: dict | None,
+    ) -> dict:
         normalized_base_url = self._normalize_base_url(base_url).lower()
         normalized_model_name = model_name.lower()
+        options: dict = {}
         if "siliconflow.cn" in normalized_base_url and "deepseek-r1" in normalized_model_name:
-            options = {
-                "temperature": 0.6,
-                "top_p": 0.95,
-                "extra_body": {"thinking_budget": 128},
-            }
+            options.update(
+                {
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "extra_body": {"thinking_budget": 128},
+                }
+            )
             lowered_instruction = instruction.lower()
-            if (
-                "json" in lowered_instruction
-                or "三元组" in instruction
-                or "cypher" in lowered_instruction
-            ):
+            if "json" in lowered_instruction or "三元组" in instruction:
                 options["max_tokens"] = 256
-            return options
-        return {}
+        if provider_options:
+            options.update(deepcopy(provider_options))
+        return options
 
     def _truncate_text(self, value: str | None, *, limit: int = 400) -> str | None:
         if value is None:
@@ -95,11 +102,17 @@ class OpenAICompatibleClient:
         instruction: str,
         input_text: str,
         timeout_seconds: int,
+        provider_options: dict | None = None,
     ) -> str:
         normalized_base_url = self._normalize_base_url(base_url)
         request_url = self._build_request_url(base_url)
         messages = self._build_messages(instruction, input_text)
-        request_options = self._build_request_options(base_url, model_name, instruction)
+        request_options = self._build_request_options(
+            base_url,
+            model_name,
+            instruction,
+            provider_options,
+        )
         payload = {
             "model": model_name,
             "messages": messages,
@@ -245,19 +258,14 @@ class MockCompatibleClient:
         instruction: str,
         input_text: str,
         timeout_seconds: int,
+        provider_options: dict | None = None,
     ) -> str:
         del api_key
         del model_name
+        del provider_options
         del timeout_seconds
-        if "cypher" in instruction.lower():
-            output = (
-                "MATCH (n:KGEntity) "
-                "WHERE n.project_id = $project_id "
-                "RETURN n.name AS name LIMIT 5"
-            )
-        elif "answer" in instruction.lower():
-            output = "Mock answer generated from query results."
-        elif base_url == "mock://extract":
+        del instruction
+        if base_url == "mock://extract":
             output = json.dumps(
                 [
                     {

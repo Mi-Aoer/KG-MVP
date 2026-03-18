@@ -11,10 +11,12 @@ from app.api.routes.configs import router as configs_router
 from app.api.routes.extract import router as extract_router
 from app.api.routes.health import router as health_router
 from app.api.routes.projects import router as projects_router
+from app.api.routes.schema import router as schema_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.triples import router as triples_router
 from app.core.database import Base, engine
 from app.core.errors import AppError
+from app.core.sqlite_compat import ensure_sqlite_compatibility
 from app.core.settings import settings
 from app.models import sqlite_models  # noqa: F401
 from app.utils.response_utils import fail
@@ -24,6 +26,7 @@ from app.utils.response_utils import fail
 async def lifespan(app: FastAPI):
     del app
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_compatibility(engine)
     yield
 
 
@@ -76,3 +79,4 @@ app.include_router(batches_router)
 app.include_router(extract_router)
 app.include_router(sources_router)
 app.include_router(triples_router)
+app.include_router(schema_router)

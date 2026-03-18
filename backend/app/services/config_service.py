@@ -1,9 +1,29 @@
-from sqlalchemy import or_, select
+import json
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.sqlite_models import ModelConfig, Project
 from app.schemas.config import ModelConfigCreateDTO, ModelConfigReadDTO, ModelConfigUpdateDTO
+
+
+def _serialize_provider_options(value: dict | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _deserialize_provider_options(value: str | None) -> dict | None:
+    if value is None:
+        return None
+    try:
+        data = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
 
 
 def mask_api_key(value: str) -> str:
@@ -21,6 +41,7 @@ def _serialize_config(config: ModelConfig) -> dict:
         api_key_masked=mask_api_key(config.api_key),
         model_name=config.model_name,
         timeout_seconds=config.timeout_seconds,
+        provider_options=_deserialize_provider_options(config.provider_options),
         is_enabled=bool(config.is_enabled),
         created_at=config.created_at,
         updated_at=config.updated_at,
@@ -29,7 +50,7 @@ def _serialize_config(config: ModelConfig) -> dict:
 
 def _get_config_or_404(db: Session, config_id: str) -> ModelConfig:
     config = db.get(ModelConfig, config_id)
-    if config is None:
+    if config is None or config.config_type != "extract":
         raise AppError("CONFIG_NOT_FOUND", code=4040, status_code=404)
     return config
 
@@ -62,6 +83,7 @@ def create_config(db: Session, payload: ModelConfigCreateDTO) -> dict:
         api_key=payload.api_key,
         model_name=payload.model_name,
         timeout_seconds=payload.timeout_seconds,
+        provider_options=_serialize_provider_options(payload.provider_options),
     )
     db.add(config)
     db.commit()
@@ -70,7 +92,11 @@ def create_config(db: Session, payload: ModelConfigCreateDTO) -> dict:
 
 
 def list_configs(db: Session) -> list[dict]:
-    stmt = select(ModelConfig).order_by(ModelConfig.created_at.desc())
+    stmt = (
+        select(ModelConfig)
+        .where(ModelConfig.config_type == "extract")
+        .order_by(ModelConfig.created_at.desc())
+    )
     configs = db.scalars(stmt).all()
     return [_serialize_config(config) for config in configs]
 
@@ -97,6 +123,9 @@ def update_config(db: Session, config_id: str, payload: ModelConfigUpdateDTO) ->
         if field == "is_enabled":
             setattr(config, field, int(value))
             continue
+        if field == "provider_options":
+            setattr(config, field, _serialize_provider_options(value))
+            continue
         setattr(config, field, value)
 
     db.commit()
@@ -107,12 +136,7 @@ def update_config(db: Session, config_id: str, payload: ModelConfigUpdateDTO) ->
 def delete_config(db: Session, config_id: str) -> None:
     config = _get_config_or_404(db, config_id)
     referenced_project = db.scalar(
-        select(Project).where(
-            or_(
-                Project.extract_config_id == config_id,
-                Project.qa_config_id == config_id,
-            )
-        )
+        select(Project).where(Project.extract_config_id == config_id)
     )
     if referenced_project is not None:
         raise AppError("CONFIG_IN_USE", code=4091, status_code=409)

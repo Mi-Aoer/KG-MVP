@@ -16,6 +16,7 @@ class ModelConfig(Base):
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    provider_options: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow_str)
     updated_at: Mapped[str] = mapped_column(
@@ -41,10 +42,10 @@ class Project(Base):
         ForeignKey("model_configs.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    qa_config_id: Mapped[str] = mapped_column(
+    qa_config_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("model_configs.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft")
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow_str)
