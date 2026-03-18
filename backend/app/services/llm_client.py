@@ -1,8 +1,14 @@
 import json
 import time
 from copy import deepcopy
+from functools import lru_cache
+from pathlib import Path
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+MOCK_DATASET_PATH = PROJECT_ROOT / "data" / "CMeIE-V2_测试用数据集.json"
 
 
 class LLMClientError(Exception):
@@ -248,7 +254,44 @@ class OpenAICompatibleClient:
         )
 
 
+@lru_cache(maxsize=1)
+def _load_mock_extract_dataset() -> dict[str, str]:
+    if not MOCK_DATASET_PATH.exists():
+        return {}
+
+    try:
+        raw_items = json.loads(MOCK_DATASET_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(raw_items, list):
+        return {}
+
+    dataset: dict[str, str] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        input_text = item.get("input")
+        output_text = item.get("output")
+        if not isinstance(input_text, str) or not isinstance(output_text, str):
+            continue
+        dataset[input_text] = output_text
+
+    return dataset
+
+
 class MockCompatibleClient:
+    def _match_dataset_output(self, input_text: str) -> tuple[str | None, str]:
+        dataset = _load_mock_extract_dataset()
+        if input_text in dataset:
+            return dataset[input_text], "dataset_exact"
+
+        normalized_input = input_text.strip()
+        if normalized_input in dataset:
+            return dataset[normalized_input], "dataset_trimmed"
+
+        return None, "dataset_miss"
+
     def call(
         self,
         *,
@@ -266,21 +309,24 @@ class MockCompatibleClient:
         del timeout_seconds
         del instruction
         if base_url == "mock://extract":
-            output = json.dumps(
-                [
-                    {
-                        "subject": input_text.strip() or "Sample",
-                        "subject_type": "Text",
-                        "predicate": "related_to",
-                        "object": "MockEntity",
-                        "object_type": "MockType",
-                    }
-                ],
-                ensure_ascii=False,
-            )
+            output, mock_mode = self._match_dataset_output(input_text)
+            if output is None:
+                output = "[]"
         else:
             output = "[]"
-        return json.dumps({"output": output}, ensure_ascii=False)
+            mock_mode = "empty"
+        return json.dumps(
+            {
+                "output": output,
+                "provider_response": {
+                    "mock": True,
+                    "base_url": base_url,
+                    "mode": mock_mode,
+                    "dataset_path": str(MOCK_DATASET_PATH),
+                },
+            },
+            ensure_ascii=False,
+        )
 
 
 def get_llm_client(base_url: str):
