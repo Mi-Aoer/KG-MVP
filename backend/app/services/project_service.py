@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.models.sqlite_models import ModelConfig, Project
 from app.schemas.project import ProjectCreateDTO, ProjectReadDTO, ProjectUpdateDTO
+from app.services.api_error_log_service import log_api_error
+from app.services.graph_service import delete_project_graph
 
 
 def _serialize_project(project: Project) -> dict:
@@ -83,5 +85,32 @@ def update_project(db: Session, project_id: str, payload: ProjectUpdateDTO) -> d
 
 def delete_project(db: Session, project_id: str) -> None:
     project = _get_project_or_404(db, project_id)
-    db.delete(project)
-    db.commit()
+    try:
+        delete_project_graph(project_id)
+    except AppError as exc:
+        db.rollback()
+        log_api_error(
+            db,
+            module="projects",
+            ref_type="project",
+            ref_id=project_id,
+            error_code=exc.message,
+            error_message=exc.message,
+        )
+        raise
+
+    try:
+        db.delete(project)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        error_message = str(exc).strip() or exc.__class__.__name__
+        log_api_error(
+            db,
+            module="projects",
+            ref_type="project",
+            ref_id=project_id,
+            error_code="PROJECT_DELETE_FAILED",
+            error_message=error_message,
+        )
+        raise AppError("PROJECT_DELETE_FAILED", code=5004, status_code=500) from exc

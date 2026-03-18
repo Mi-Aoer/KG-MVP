@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes.batches import router as batches_router
 from app.api.routes.configs import router as configs_router
 from app.api.routes.extract import router as extract_router
+from app.api.routes.graph import router as graph_router
 from app.api.routes.health import router as health_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.schema import router as schema_router
@@ -16,6 +17,7 @@ from app.api.routes.sources import router as sources_router
 from app.api.routes.triples import router as triples_router
 from app.core.database import Base, engine
 from app.core.errors import AppError
+from app.core.neo4j_client import close_driver
 from app.core.sqlite_compat import ensure_sqlite_compatibility
 from app.core.settings import settings
 from app.models import sqlite_models  # noqa: F401
@@ -27,7 +29,10 @@ async def lifespan(app: FastAPI):
     del app
     Base.metadata.create_all(bind=engine)
     ensure_sqlite_compatibility(engine)
-    yield
+    try:
+        yield
+    finally:
+        close_driver()
 
 
 app = FastAPI(
@@ -80,3 +85,4 @@ app.include_router(extract_router)
 app.include_router(sources_router)
 app.include_router(triples_router)
 app.include_router(schema_router)
+app.include_router(graph_router)
