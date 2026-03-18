@@ -11,6 +11,8 @@ from app.api.routes.configs import router as configs_router
 from app.api.routes.extract import router as extract_router
 from app.api.routes.health import router as health_router
 from app.api.routes.projects import router as projects_router
+from app.api.routes.sources import router as sources_router
+from app.api.routes.triples import router as triples_router
 from app.core.database import Base, engine
 from app.core.errors import AppError
 from app.core.settings import settings
@@ -72,3 +74,5 @@ app.include_router(configs_router)
 app.include_router(projects_router)
 app.include_router(batches_router)
 app.include_router(extract_router)
+app.include_router(sources_router)
+app.include_router(triples_router)

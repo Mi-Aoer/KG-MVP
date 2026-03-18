@@ -8,6 +8,7 @@ from app.core.database import SessionLocal
 from app.core.errors import AppError
 from app.models.sqlite_models import ImportBatch, ModelConfig, Project, SourceRecord
 from app.schemas.extract import BatchProgressDTO
+from app.services import parse_service
 from app.services.llm_client import LLMClientError, get_llm_client
 from app.utils.time_utils import utcnow_str
 
@@ -95,6 +96,7 @@ def _mark_source_for_retry(source: SourceRecord) -> None:
     source.parse_status = "pending"
     source.request_payload = None
     source.raw_response = None
+    source.cleaned_output_text = None
     source.error_message = None
 
 
@@ -258,6 +260,7 @@ def _process_source(db: Session, batch: ImportBatch, config: ModelConfig, source
     source.error_message = None
     db.commit()
     db.refresh(source)
+    parse_service.parse_source_after_extract(db, source.id)
     refresh_batch_status(db, batch.id)
 
 
