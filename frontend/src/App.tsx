@@ -23,7 +23,16 @@ import {
   listImportLogs,
   rebuildGraph,
 } from "./api/graph";
-import { createConfig, createProject, deleteConfig, deleteProject, listConfigs, listProjects } from "./api/project";
+import {
+  createConfig,
+  createProject,
+  deleteConfig,
+  deleteProject,
+  listConfigs,
+  listProjects,
+  updateConfig,
+  updateProject,
+} from "./api/project";
 import {
   createEntityType,
   createRelationType,
@@ -114,6 +123,13 @@ function parseProviderOptionsText(text: string): Record<string, unknown> | null 
     throw new Error("provider_options 必须是 JSON 对象或留空。");
   }
   return parsed as Record<string, unknown>;
+}
+
+function stringifyProviderOptions(value: Record<string, unknown> | null): string {
+  if (!value) {
+    return "";
+  }
+  return JSON.stringify(value, null, 2);
 }
 
 function formatTime(value: string | null): string {
@@ -216,6 +232,8 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [configForm, setConfigForm] = useState<ConfigFormState>(() => buildDemoConfigDraft());
   const [projectForm, setProjectForm] = useState<ProjectFormState>(() => buildDemoProjectDraft());
+  const [editingConfigId, setEditingConfigId] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState("");
 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState("");
@@ -481,6 +499,26 @@ function App() {
       return;
     }
 
+    if (editingConfigId) {
+      const payload = {
+        name: configForm.name.trim(),
+        base_url: configForm.baseUrl.trim(),
+        model_name: configForm.modelName.trim(),
+        timeout_seconds: timeoutSeconds,
+        provider_options: providerOptions,
+        ...(configForm.apiKey.trim() ? { api_key: configForm.apiKey.trim() } : {}),
+      };
+      const updated = await runTask("update-config", () => updateConfig(editingConfigId, payload));
+      if (!updated) {
+        return;
+      }
+      await loadOverview();
+      setEditingConfigId("");
+      setConfigForm(buildDemoConfigDraft());
+      showSuccess(`已更新抽取配置：${updated.name}`);
+      return;
+    }
+
     const created = await runTask("create-config", () =>
       createConfig({
         config_type: "extract",
@@ -506,6 +544,23 @@ function App() {
     showSuccess(`已创建抽取配置：${created.name}`);
   }
 
+  function handleStartEditConfig(config: ModelConfig) {
+    setEditingConfigId(config.id);
+    setConfigForm({
+      name: config.name,
+      baseUrl: config.base_url,
+      apiKey: "",
+      modelName: config.model_name,
+      timeoutSeconds: String(config.timeout_seconds),
+      providerOptionsText: stringifyProviderOptions(config.provider_options),
+    });
+  }
+
+  function resetConfigFormToDemo() {
+    setEditingConfigId("");
+    setConfigForm(buildDemoConfigDraft());
+  }
+
   async function handleDeleteConfig(config: ModelConfig) {
     if (!window.confirm(`确认删除配置“${config.name}”吗？`)) {
       return;
@@ -517,6 +572,9 @@ function App() {
     }
 
     await loadOverview();
+    if (config.id === editingConfigId) {
+      resetConfigFormToDemo();
+    }
     showSuccess(`已删除配置：${config.name}`);
   }
 
@@ -525,6 +583,24 @@ function App() {
 
     if (!projectForm.extractConfigId) {
       showError("请先选择抽取配置。");
+      return;
+    }
+
+    if (editingProjectId) {
+      const updated = await runTask("update-project", () =>
+        updateProject(editingProjectId, {
+          name: projectForm.name.trim(),
+          description: projectForm.description.trim() || null,
+          extract_config_id: projectForm.extractConfigId,
+        }),
+      );
+      if (!updated) {
+        return;
+      }
+      await loadOverview();
+      setEditingProjectId("");
+      setProjectForm(buildDemoProjectDraft(updated.extract_config_id));
+      showSuccess(`已更新项目：${updated.name}`);
       return;
     }
 
@@ -547,6 +623,21 @@ function App() {
     showSuccess(`已创建项目：${created.name}`);
   }
 
+  function handleStartEditProject(project: Project) {
+    setEditingProjectId(project.id);
+    setSelectedProjectId(project.id);
+    setProjectForm({
+      name: project.name,
+      description: project.description ?? "",
+      extractConfigId: project.extract_config_id,
+    });
+  }
+
+  function resetProjectFormToDemo() {
+    setEditingProjectId("");
+    setProjectForm(buildDemoProjectDraft(configs[0]?.id ?? ""));
+  }
+
   async function handleDeleteProject(project: Project) {
     if (!window.confirm(`确认删除项目“${project.name}”吗？这会同时删除 SQLite 与 Neo4j 中的项目数据。`)) {
       return;
@@ -561,6 +652,9 @@ function App() {
       setSelectedProjectId("");
     }
     await loadOverview();
+    if (project.id === editingProjectId) {
+      resetProjectFormToDemo();
+    }
     showSuccess(`已删除项目：${project.name}`);
   }
 
@@ -983,15 +1077,19 @@ function App() {
 
             <div className="two-column-grid">
               <SectionCard
-                title="新建抽取配置"
-                description="当前页面只创建 extract 配置。演示默认值已经对齐 mock://extract 数据驱动 mock。"
+                title={editingConfigId ? "编辑抽取配置" : "新建抽取配置"}
+                description={
+                  editingConfigId
+                    ? "编辑时 API Key 可留空，留空表示沿用当前配置中的密钥。"
+                    : "当前页面只创建 extract 配置。演示默认值已经对齐 mock://extract 数据驱动 mock。"
+                }
                 actions={
                   <button
                     className="ghost-button"
                     type="button"
-                    onClick={() => setConfigForm(buildDemoConfigDraft())}
+                    onClick={resetConfigFormToDemo}
                   >
-                    恢复演示默认值
+                    {editingConfigId ? "取消编辑" : "恢复演示默认值"}
                   </button>
                 }
               >
@@ -1023,7 +1121,8 @@ function App() {
                       onChange={(event) =>
                         setConfigForm((current) => ({ ...current, apiKey: event.target.value }))
                       }
-                      required
+                      placeholder={editingConfigId ? "留空则保持当前密钥不变" : ""}
+                      required={!editingConfigId}
                     />
                   </label>
                   <label>
@@ -1065,25 +1164,33 @@ function App() {
                     />
                   </label>
                   <div className="form-actions full-span">
-                    <button className="primary-button" type="submit" disabled={isBusy("create-config")}>
-                      {isBusy("create-config") ? "创建中..." : "创建抽取配置"}
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={isBusy("create-config") || isBusy("update-config")}
+                    >
+                      {editingConfigId
+                        ? isBusy("update-config")
+                          ? "保存中..."
+                          : "保存配置修改"
+                        : isBusy("create-config")
+                          ? "创建中..."
+                          : "创建抽取配置"}
                     </button>
                   </div>
                 </form>
               </SectionCard>
 
               <SectionCard
-                title="新建项目"
+                title={editingProjectId ? "编辑项目" : "新建项目"}
                 description="项目创建后默认进入 ready 状态。后续所有上传、抽取、schema 和图谱操作都基于当前选中项目。"
                 actions={
                   <button
                     className="ghost-button"
                     type="button"
-                    onClick={() =>
-                      setProjectForm(buildDemoProjectDraft(configs[0]?.id ?? projectForm.extractConfigId))
-                    }
+                    onClick={resetProjectFormToDemo}
                   >
-                    恢复演示默认值
+                    {editingProjectId ? "取消编辑" : "恢复演示默认值"}
                   </button>
                 }
               >
@@ -1136,9 +1243,15 @@ function App() {
                     <button
                       className="primary-button"
                       type="submit"
-                      disabled={!configs.length || isBusy("create-project")}
+                      disabled={!configs.length || isBusy("create-project") || isBusy("update-project")}
                     >
-                      {isBusy("create-project") ? "创建中..." : "创建项目"}
+                      {editingProjectId
+                        ? isBusy("update-project")
+                          ? "保存中..."
+                          : "保存项目修改"
+                        : isBusy("create-project")
+                          ? "创建中..."
+                          : "创建项目"}
                     </button>
                   </div>
                 </form>
@@ -1174,6 +1287,13 @@ function App() {
                               />
                             </td>
                             <td>
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                onClick={() => handleStartEditConfig(config)}
+                              >
+                                编辑
+                              </button>
                               <button
                                 className="ghost-button"
                                 type="button"
@@ -1234,6 +1354,13 @@ function App() {
                                   onClick={() => setSelectedProjectId(project.id)}
                                 >
                                   {project.id === selectedProjectId ? "已选中" : "选中"}
+                                </button>
+                                <button
+                                  className="ghost-button"
+                                  type="button"
+                                  onClick={() => handleStartEditProject(project)}
+                                >
+                                  编辑
                                 </button>
                                 <button
                                   className="ghost-button"

@@ -1,9 +1,11 @@
-import { apiDelete, apiGet, apiPost } from "./client";
+import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 import type {
   CreateConfigPayload,
   CreateProjectPayload,
   ModelConfig,
   Project,
+  UpdateConfigPayload,
+  UpdateProjectPayload,
 } from "./types";
 
 export function listConfigs(): Promise<ModelConfig[]> {
@@ -12,6 +14,10 @@ export function listConfigs(): Promise<ModelConfig[]> {
 
 export function createConfig(payload: CreateConfigPayload): Promise<ModelConfig> {
   return apiPost<ModelConfig, CreateConfigPayload>("/configs", payload);
+}
+
+export function updateConfig(configId: string, payload: UpdateConfigPayload): Promise<ModelConfig> {
+  return apiPut<ModelConfig, UpdateConfigPayload>(`/configs/${configId}`, payload);
 }
 
 export function deleteConfig(configId: string): Promise<boolean> {
@@ -24,6 +30,10 @@ export function listProjects(): Promise<Project[]> {
 
 export function createProject(payload: CreateProjectPayload): Promise<Project> {
   return apiPost<Project, CreateProjectPayload>("/projects", payload);
+}
+
+export function updateProject(projectId: string, payload: UpdateProjectPayload): Promise<Project> {
+  return apiPut<Project, UpdateProjectPayload>(`/projects/${projectId}`, payload);
 }
 
 export function deleteProject(projectId: string): Promise<boolean> {

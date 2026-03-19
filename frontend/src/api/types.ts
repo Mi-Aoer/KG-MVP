@@ -165,10 +165,25 @@ export interface CreateConfigPayload {
   provider_options: Record<string, unknown> | null;
 }
 
+export interface UpdateConfigPayload {
+  name?: string;
+  base_url?: string;
+  api_key?: string;
+  model_name?: string;
+  timeout_seconds?: number;
+  provider_options?: Record<string, unknown> | null;
+}
+
 export interface CreateProjectPayload {
   name: string;
   description: string | null;
   extract_config_id: string;
+}
+
+export interface UpdateProjectPayload {
+  name?: string;
+  description?: string | null;
+  extract_config_id?: string;
 }
 
 export interface CreateTriplePayload {

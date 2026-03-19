@@ -36,6 +36,30 @@ class OpenAICompatibleClient:
             content = input_text
         return [{"role": "user", "content": content}]
 
+    def _is_structured_task(self, instruction: str) -> bool:
+        normalized_instruction = instruction.lower()
+        return (
+            "json" in normalized_instruction
+            or "三元组" in instruction
+            or "subject_type" in normalized_instruction
+            or "object_type" in normalized_instruction
+        )
+
+    def _merge_options(self, base: dict, overrides: dict | None) -> dict:
+        merged = deepcopy(base)
+        if not overrides:
+            return merged
+
+        for key, value in overrides.items():
+            if (
+                isinstance(value, dict)
+                and isinstance(merged.get(key), dict)
+            ):
+                merged[key] = self._merge_options(merged[key], value)
+                continue
+            merged[key] = deepcopy(value)
+        return merged
+
     def _build_request_options(
         self,
         base_url: str,
@@ -46,20 +70,24 @@ class OpenAICompatibleClient:
         normalized_base_url = self._normalize_base_url(base_url).lower()
         normalized_model_name = model_name.lower()
         options: dict = {}
-        if "siliconflow.cn" in normalized_base_url and "deepseek-r1" in normalized_model_name:
+
+        is_siliconflow = "siliconflow.cn" in normalized_base_url
+        is_deepseek_model = "deepseek" in normalized_model_name
+        if is_siliconflow and is_deepseek_model:
             options.update(
                 {
                     "temperature": 0.6,
                     "top_p": 0.95,
-                    "extra_body": {"thinking_budget": 128},
                 }
             )
-            lowered_instruction = instruction.lower()
-            if "json" in lowered_instruction or "三元组" in instruction:
-                options["max_tokens"] = 256
-        if provider_options:
-            options.update(deepcopy(provider_options))
-        return options
+
+        if is_siliconflow and "deepseek-r1" in normalized_model_name:
+            options["extra_body"] = {"thinking_budget": 128}
+
+        if self._is_structured_task(instruction):
+            options["max_tokens"] = 256
+
+        return self._merge_options(options, provider_options)
 
     def _truncate_text(self, value: str | None, *, limit: int = 400) -> str | None:
         if value is None:
