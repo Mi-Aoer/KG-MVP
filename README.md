@@ -93,7 +93,7 @@ SQLITE_URL=sqlite:///../data/app.db
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=xpsdd520
-CORS_ORIGINS=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
 ## 抽取配置说明

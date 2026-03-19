@@ -120,7 +120,7 @@ function parseProviderOptionsText(text: string): Record<string, unknown> | null 
 
   const parsed = JSON.parse(trimmed);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("provider_options 必须是 JSON 对象或留空。");
+    throw new Error("扩展参数必须是 JSON 对象，或留空。");
   }
   return parsed as Record<string, unknown>;
 }
@@ -218,8 +218,118 @@ function getSourceStatusTone(status: string): string {
   return "muted";
 }
 
+function formatProjectStatus(status: string): string {
+  if (status === "ready") {
+    return "待处理";
+  }
+  if (status === "initialized") {
+    return "已初始化";
+  }
+  if (status === "imported") {
+    return "已导入";
+  }
+  return status;
+}
+
+function formatBatchStatus(status: string): string {
+  if (status === "uploaded") {
+    return "已上传";
+  }
+  if (status === "extracting") {
+    return "处理中";
+  }
+  if (status === "success") {
+    return "处理成功";
+  }
+  if (status === "partial_success") {
+    return "部分成功";
+  }
+  if (status === "failed") {
+    return "处理失败";
+  }
+  return status;
+}
+
+function formatLogicalStatus(status: string): string {
+  if (status === "pending") {
+    return "待处理";
+  }
+  if (status === "running") {
+    return "处理中";
+  }
+  if (status === "request_failed") {
+    return "请求失败";
+  }
+  if (status === "parse_failed") {
+    return "解析失败";
+  }
+  if (status === "edited") {
+    return "已人工修订";
+  }
+  if (status === "success") {
+    return "处理成功";
+  }
+  return status;
+}
+
+function formatRequestStatus(status: string): string {
+  if (status === "pending") {
+    return "待处理";
+  }
+  if (status === "running") {
+    return "处理中";
+  }
+  if (status === "success") {
+    return "成功";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  return status;
+}
+
+function formatParseStatus(status: string): string {
+  if (status === "pending") {
+    return "待解析";
+  }
+  if (status === "success") {
+    return "解析成功";
+  }
+  if (status === "failed") {
+    return "解析失败";
+  }
+  return status;
+}
+
+function formatImportMode(mode: string): string {
+  if (mode === "incremental") {
+    return "增量导入";
+  }
+  if (mode === "rebuild") {
+    return "重建导入";
+  }
+  return mode;
+}
+
+function formatTaskStatus(status: string): string {
+  if (status === "pending") {
+    return "待处理";
+  }
+  if (status === "success") {
+    return "成功";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  return status;
+}
+
+function formatBooleanText(value: boolean): string {
+  return value ? "是" : "否";
+}
+
 function isSourceRetryable(source: SourceSummary | SourceDetail): boolean {
-  return source.request_status === "failed" || source.parse_status === "failed";
+  return source.request_status !== "running";
 }
 
 function App() {
@@ -258,6 +368,10 @@ function App() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const activeProgress = progress?.batch_id === selectedBatchId ? progress : null;
+  const configUsageCountMap = projects.reduce<Record<string, number>>((result, project) => {
+    result[project.extract_config_id] = (result[project.extract_config_id] ?? 0) + 1;
+    return result;
+  }, {});
 
   function setBusy(key: string, value: boolean) {
     setBusyKeys((current) => ({
@@ -562,6 +676,14 @@ function App() {
   }
 
   async function handleDeleteConfig(config: ModelConfig) {
+    const usageCount = configUsageCountMap[config.id] ?? 0;
+    if (usageCount > 0) {
+      showError(
+        `配置“${config.name}”正在被 ${usageCount} 个项目使用，不能删除。请先删除相关项目，或把项目改到其他抽取配置。`,
+      );
+      return;
+    }
+
     if (!window.confirm(`确认删除配置“${config.name}”吗？`)) {
       return;
     }
@@ -639,7 +761,7 @@ function App() {
   }
 
   async function handleDeleteProject(project: Project) {
-    if (!window.confirm(`确认删除项目“${project.name}”吗？这会同时删除 SQLite 与 Neo4j 中的项目数据。`)) {
+    if (!window.confirm(`确认删除项目“${project.name}”吗？项目相关数据将一并删除。`)) {
       return;
     }
 
@@ -666,7 +788,7 @@ function App() {
       return;
     }
     if (!uploadFile) {
-      showError("请先选择一个 txt 文件。");
+      showError("请先选择一个文本文件。");
       return;
     }
 
@@ -679,7 +801,7 @@ function App() {
     setSelectedBatchId(created.id);
     setUploadFile(null);
     setFileInputKey((current) => current + 1);
-    showSuccess(`已上传批次：${created.file_name}`);
+    showSuccess(`已上传文件：${created.file_name}`);
   }
 
   async function handleStartExtract() {
@@ -688,7 +810,7 @@ function App() {
       return;
     }
     if (!instruction.trim()) {
-      showError("instruction 不能为空。");
+      showError("抽取规则不能为空。");
       return;
     }
 
@@ -698,7 +820,7 @@ function App() {
     }
 
     await refreshSelectedBatchState(selectedBatchId);
-    showSuccess(`已发起抽取任务：${started.batch_id}`);
+    showSuccess("已启动抽取任务。");
   }
 
   async function handleRetryFailed() {
@@ -713,7 +835,7 @@ function App() {
     }
 
     await refreshSelectedBatchState(selectedBatchId);
-    showSuccess(`已发起失败项重试，排队数量：${result.queued ?? 0}`);
+    showSuccess(`已提交失败记录重试，排队数量：${result.queued ?? 0}`);
   }
 
   async function handleRetrySource(source: SourceSummary | SourceDetail) {
@@ -725,16 +847,16 @@ function App() {
     if (selectedBatchId) {
       await refreshSelectedBatchState(selectedBatchId);
     }
-    showSuccess(`已发起单条重试，批次：${result.batch_id}`);
+    showSuccess("已提交当前记录重试。");
   }
 
   async function handleSaveRawResponse() {
     if (!sourceDetail) {
-      showError("请先选择一条 source 记录。");
+      showError("请先选择一条记录。");
       return;
     }
     if (sourceDetail.raw_response === null) {
-      showError("当前记录没有 raw_response，不能直接修改。请先重试或手工新增三元组。");
+      showError("当前记录暂无模型返回内容，无法直接编辑。请先重试处理或手动补充三元组。");
       return;
     }
 
@@ -750,12 +872,12 @@ function App() {
       await loadBatchContext(selectedBatchId);
     }
     await loadOverview();
-    showSuccess("已保存 raw_response，当前记录可继续 reparse。");
+    showSuccess("已保存模型返回内容，可继续重新解析。");
   }
 
   async function handleReparse() {
     if (!sourceDetail) {
-      showError("请先选择一条 source 记录。");
+      showError("请先选择一条记录。");
       return;
     }
 
@@ -768,12 +890,12 @@ function App() {
     if (selectedProjectId) {
       await loadSchemaContext(selectedProjectId);
     }
-    showSuccess(`重解析完成，当前有效三元组数：${result.triple_count}`);
+    showSuccess(`重新解析完成，当前有效三元组数：${result.triple_count}`);
   }
 
   async function handleCreateTriple() {
     if (!selectedSourceId) {
-      showError("请先选择一条 source 记录。");
+      showError("请先选择一条记录。");
       return;
     }
 
@@ -848,7 +970,7 @@ function App() {
     await loadSchemaContext(selectedProjectId);
     await loadOverview();
     showSuccess(
-      `schema 已刷新：实体类型 ${result.entity_types.length} 项，关系类型 ${result.relation_types.length} 项。`,
+      `类型已刷新：实体类型 ${result.entity_types.length} 项，关系类型 ${result.relation_types.length} 项。`,
     );
   }
 
@@ -971,7 +1093,7 @@ function App() {
 
     await loadSchemaContext(selectedProjectId);
     await loadOverview();
-    showSuccess(`图谱初始化完成，项目状态：${result.status}`);
+    showSuccess(`图谱初始化完成，当前状态：${formatProjectStatus(result.status)}`);
   }
 
   async function handleImportGraph() {
@@ -1014,11 +1136,10 @@ function App() {
     <div className="app-shell">
       <header className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">通用领域知识图谱构建系统 1.0</p>
-          <h1>图谱构建闭环前端</h1>
+          <p className="eyebrow">知识图谱管理平台</p>
+          <h1>知识抽取与图谱构建</h1>
           <p className="hero-text">
-            当前只覆盖一期主链路：txt 批量导入、三元组抽取、结果修正、schema 维护、Neo4j
-            导入。页面已内置演示默认值，问答链路不在当前实现范围内。
+            统一管理文本导入、知识抽取、结果校对与图谱更新。
           </p>
         </div>
         <div className="hero-summary">
@@ -1047,7 +1168,7 @@ function App() {
         <TabButton
           active={activeTab === "schema"}
           onClick={() => setActiveTab("schema")}
-          label="Schema 与图谱"
+          label="类型与图谱"
         />
       </nav>
 
@@ -1063,25 +1184,13 @@ function App() {
       <main className="panel-stack">
         {activeTab === "project" ? (
           <>
-            <SectionCard
-              title="演示默认值"
-              description="已内置 mock 抽取配置、演示项目名称和建议样例文件。第一次演示建议先创建抽取配置，再创建项目。"
-            >
-              <div className="hint-grid">
-                <HintItem label="推荐 base_url" value="mock://extract" />
-                <HintItem label="推荐 instruction" value="已预置系统可直接使用版本，可在导入与抽取标签查看" />
-                <HintItem label="样例文件" value={DEMO_SAMPLE_FILE_HINT} />
-                <HintItem label="当前范围" value="不包含问答页、Cypher 生成与问答接口" />
-              </div>
-            </SectionCard>
-
             <div className="two-column-grid">
               <SectionCard
                 title={editingConfigId ? "编辑抽取配置" : "新建抽取配置"}
                 description={
                   editingConfigId
-                    ? "编辑时 API Key 可留空，留空表示沿用当前配置中的密钥。"
-                    : "当前页面只创建 extract 配置。演示默认值已经对齐 mock://extract 数据驱动 mock。"
+                    ? "如需保留当前访问密钥，可将该字段留空。"
+                    : "填写模型服务地址、访问密钥和模型名称，用于文本抽取。"
                 }
                 actions={
                   <button
@@ -1089,7 +1198,7 @@ function App() {
                     type="button"
                     onClick={resetConfigFormToDemo}
                   >
-                    {editingConfigId ? "取消编辑" : "恢复演示默认值"}
+                    {editingConfigId ? "取消编辑" : "重置表单"}
                   </button>
                 }
               >
@@ -1105,7 +1214,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    <span>Base URL</span>
+                    <span>服务地址</span>
                     <input
                       value={configForm.baseUrl}
                       onChange={(event) =>
@@ -1115,7 +1224,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    <span>API Key</span>
+                    <span>访问密钥</span>
                     <input
                       value={configForm.apiKey}
                       onChange={(event) =>
@@ -1126,7 +1235,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    <span>模型名</span>
+                    <span>模型名称</span>
                     <input
                       value={configForm.modelName}
                       onChange={(event) =>
@@ -1150,7 +1259,7 @@ function App() {
                     />
                   </label>
                   <label className="full-span">
-                    <span>provider_options JSON（可留空）</span>
+                    <span>扩展参数（JSON，可选）</span>
                     <textarea
                       rows={4}
                       value={configForm.providerOptionsText}
@@ -1183,14 +1292,14 @@ function App() {
 
               <SectionCard
                 title={editingProjectId ? "编辑项目" : "新建项目"}
-                description="项目创建后默认进入 ready 状态。后续所有上传、抽取、schema 和图谱操作都基于当前选中项目。"
+                description="创建项目后，可在该项目下管理文本、抽取结果和图谱数据。"
                 actions={
                   <button
                     className="ghost-button"
                     type="button"
                     onClick={resetProjectFormToDemo}
                   >
-                    {editingProjectId ? "取消编辑" : "恢复演示默认值"}
+                    {editingProjectId ? "取消编辑" : "重置表单"}
                   </button>
                 }
               >
@@ -1259,61 +1368,70 @@ function App() {
             </div>
 
             <div className="two-column-grid">
-              <SectionCard title="抽取配置列表" description="只显示当前一期启用的 extract 配置。">
+              <SectionCard title="抽取配置列表" description="管理可用的抽取服务配置。">
                 {configs.length ? (
                   <div className="table-wrap">
                     <table className="data-table">
                       <thead>
                         <tr>
                           <th>名称</th>
-                          <th>Base URL</th>
+                          <th>服务地址</th>
                           <th>模型</th>
-                          <th>API Key</th>
+                          <th>访问密钥</th>
                           <th>状态</th>
                           <th>操作</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {configs.map((config) => (
-                          <tr key={config.id}>
-                            <td>{config.name}</td>
-                            <td className="mono-cell">{config.base_url}</td>
-                            <td>{config.model_name}</td>
-                            <td className="mono-cell">{config.api_key_masked}</td>
-                            <td>
-                              <StatusBadge
-                                label={config.is_enabled ? "enabled" : "disabled"}
-                                tone={config.is_enabled ? "success" : "muted"}
-                              />
-                            </td>
-                            <td>
-                              <button
-                                className="ghost-button"
-                                type="button"
-                                onClick={() => handleStartEditConfig(config)}
-                              >
-                                编辑
-                              </button>
-                              <button
-                                className="ghost-button"
-                                type="button"
-                                onClick={() => handleDeleteConfig(config)}
-                                disabled={isBusy("delete-config")}
-                              >
-                                删除
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {configs.map((config) => {
+                          const usageCount = configUsageCountMap[config.id] ?? 0;
+                          const isConfigInUse = usageCount > 0;
+
+                          return (
+                            <tr key={config.id}>
+                              <td className="stacked-cell">
+                                <strong>{config.name}</strong>
+                                {isConfigInUse ? <span>被 {usageCount} 个项目引用，暂不可删除</span> : null}
+                              </td>
+                              <td className="mono-cell">{config.base_url}</td>
+                              <td>{config.model_name}</td>
+                              <td className="mono-cell">{config.api_key_masked}</td>
+                              <td>
+                                <StatusBadge
+                                  label={config.is_enabled ? "可用" : "停用"}
+                                  tone={config.is_enabled ? "success" : "muted"}
+                                />
+                              </td>
+                              <td>
+                                <button
+                                  className="ghost-button"
+                                  type="button"
+                                  onClick={() => handleStartEditConfig(config)}
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  className="ghost-button"
+                                  type="button"
+                                  onClick={() => handleDeleteConfig(config)}
+                                  disabled={isBusy("delete-config") || isConfigInUse}
+                                  title={isConfigInUse ? "该配置正在被项目使用，无法删除" : undefined}
+                                >
+                                  删除
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <EmptyState title="还没有抽取配置" description="先使用左侧表单创建一个 extract 配置。" />
+                  <EmptyState title="暂无抽取配置" description="请先新建抽取配置。" />
                 )}
               </SectionCard>
 
-              <SectionCard title="项目列表" description="选中项目后，其他标签会自动切换到该项目上下文。">
+              <SectionCard title="项目列表" description="选中项目后，可继续执行导入、校对和图谱操作。">
                 {projects.length ? (
                   <div className="table-wrap">
                     <table className="data-table">
@@ -1340,7 +1458,7 @@ function App() {
                             </td>
                             <td>
                               <StatusBadge
-                                label={project.status}
+                                label={formatProjectStatus(project.status)}
                                 tone={getProjectStatusTone(project.status)}
                               />
                             </td>
@@ -1378,7 +1496,7 @@ function App() {
                     </table>
                   </div>
                 ) : (
-                  <EmptyState title="还没有项目" description="先创建抽取配置，再创建演示项目。" />
+                  <EmptyState title="暂无项目" description="请先创建项目。" />
                 )}
               </SectionCard>
             </div>
@@ -1388,23 +1506,25 @@ function App() {
         {activeTab === "batch" ? (
           selectedProject ? (
             <>
-              <SectionCard
-                title="当前项目上下文"
-                description="当前标签中的上传、抽取、重试、结果修正和三元组编辑都会作用于这个项目。"
-              >
-                <div className="hint-grid">
-                  <HintItem label="项目名称" value={selectedProject.name} />
-                  <HintItem label="项目状态" value={selectedProject.status} />
-                  <HintItem label="抽取配置" value={configs.find((config) => config.id === selectedProject.extract_config_id)?.name || selectedProject.extract_config_id} />
-                  <HintItem label="样例文件" value={DEMO_SAMPLE_FILE_HINT} />
-                </div>
-              </SectionCard>
+              <ContextStrip
+                items={[
+                  { label: "当前项目", value: selectedProject.name },
+                  { label: "状态", value: formatProjectStatus(selectedProject.status) },
+                  {
+                    label: "抽取配置",
+                    value:
+                      configs.find((config) => config.id === selectedProject.extract_config_id)?.name ||
+                      selectedProject.extract_config_id,
+                  },
+                  { label: "文件要求", value: DEMO_SAMPLE_FILE_HINT },
+                ]}
+              />
 
               <div className="two-column-grid">
-                <SectionCard title="上传 txt 并准备抽取" description="上传样例 txt 后，系统按每行一条创建批次与 source 记录。">
+                <SectionCard title="上传文本并准备处理" description="上传 .txt 文件后，系统会按行生成待处理记录。">
                   <form className="form-grid" onSubmit={handleUploadBatch}>
                     <label className="full-span">
-                      <span>选择 txt 文件</span>
+                      <span>选择文本文件</span>
                       <input
                         key={fileInputKey}
                         type="file"
@@ -1413,7 +1533,7 @@ function App() {
                       />
                     </label>
                     <label className="full-span">
-                      <span>本次抽取 instruction</span>
+                      <span>抽取规则</span>
                       <textarea
                         rows={16}
                         value={instruction}
@@ -1422,22 +1542,22 @@ function App() {
                     </label>
                     <div className="form-actions full-span">
                       <button className="primary-button" type="submit" disabled={isBusy("upload-batch")}>
-                        {isBusy("upload-batch") ? "上传中..." : "上传批次"}
+                        {isBusy("upload-batch") ? "上传中..." : "上传文件"}
                       </button>
                       <button
                         className="ghost-button"
                         type="button"
                         onClick={() => setInstruction(DEMO_INSTRUCTION)}
                       >
-                        恢复演示 instruction
+                        恢复系统预设
                       </button>
                     </div>
                   </form>
                 </SectionCard>
 
                 <SectionCard
-                  title="批次与抽取进度"
-                  description="先选中一个批次，再发起抽取或重试失败项。抽取中会自动轮询进度。"
+                  title="处理批次与进度"
+                  description="选择一个批次后，可开始处理或重试失败项。处理过程中会自动更新进度。"
                 >
                   <div className="stacked-block">
                     <div className="inline-actions">
@@ -1447,7 +1567,7 @@ function App() {
                         onClick={handleStartExtract}
                         disabled={!selectedBatchId || isBusy("start-extract")}
                       >
-                        {isBusy("start-extract") ? "提交中..." : "发起抽取"}
+                        {isBusy("start-extract") ? "提交中..." : "开始处理"}
                       </button>
                       <button
                         className="ghost-button"
@@ -1463,7 +1583,7 @@ function App() {
                       <StatCard label="当前批次" value={selectedBatch?.file_name || "未选择"} />
                       <StatCard
                         label="批次状态"
-                        value={activeProgress?.status || selectedBatch?.status || "-"}
+                        value={formatBatchStatus(activeProgress?.status || selectedBatch?.status || "-")}
                         tone={getBatchStatusTone(activeProgress?.status || selectedBatch?.status || "")}
                       />
                       <StatCard
@@ -1498,9 +1618,12 @@ function App() {
                                 onClick={() => setSelectedBatchId(batch.id)}
                               >
                                 <td>{batch.file_name}</td>
-                                <td>
-                                  <StatusBadge label={batch.status} tone={getBatchStatusTone(batch.status)} />
-                                </td>
+                              <td>
+                                <StatusBadge
+                                  label={formatBatchStatus(batch.status)}
+                                  tone={getBatchStatusTone(batch.status)}
+                                />
+                              </td>
                                 <td>{batch.valid_lines}</td>
                                 <td>{batch.success_count}</td>
                                 <td>{batch.request_failed_count}</td>
@@ -1517,7 +1640,7 @@ function App() {
                 </SectionCard>
               </div>
 
-              <SectionCard title="source 列表" description="选择一条 source 后，可查看 raw_response、错误信息和三元组详情。">
+              <SectionCard title="文本记录" description="选择一条记录后，可查看处理结果、错误信息和三元组详情。">
                 {sourceSummaries.length ? (
                   <div className="table-wrap">
                     <table className="data-table">
@@ -1541,10 +1664,13 @@ function App() {
                             >
                               <td>{source.line_no}</td>
                               <td>
-                                <StatusBadge label={logicalStatus} tone={getSourceStatusTone(logicalStatus)} />
+                                <StatusBadge
+                                  label={formatLogicalStatus(logicalStatus)}
+                                  tone={getSourceStatusTone(logicalStatus)}
+                                />
                               </td>
-                              <td>{source.request_status}</td>
-                              <td>{source.parse_status}</td>
+                              <td>{formatRequestStatus(source.request_status)}</td>
+                              <td>{formatParseStatus(source.parse_status)}</td>
                               <td title={source.input_text}>{truncateText(source.input_text, 90)}</td>
                               <td>
                                 <div className="inline-actions">
@@ -1572,23 +1698,26 @@ function App() {
                     </table>
                   </div>
                 ) : (
-                  <EmptyState title="还没有 source 记录" description="先上传并选择一个批次。" />
+                  <EmptyState title="暂无文本记录" description="请先上传并选择一个批次。" />
                 )}
               </SectionCard>
 
               <div className="two-column-grid">
-                <SectionCard title="source 明细与 raw_response" description="若解析失败，可先修改 raw_response，再执行 reparse。">
+                <SectionCard title="记录详情与模型返回" description="如解析失败，可先修改模型返回内容，再重新解析。">
                   {sourceDetail ? (
                     <div className="stacked-block">
                       <div className="detail-grid">
                         <DetailBlock label="行号" value={String(sourceDetail.line_no)} />
-                        <DetailBlock label="逻辑状态" value={getSourceLogicalStatus(sourceDetail)} />
-                        <DetailBlock label="request_status" value={sourceDetail.request_status} />
-                        <DetailBlock label="parse_status" value={sourceDetail.parse_status} />
-                        <DetailBlock label="retry_count" value={String(sourceDetail.retry_count)} />
                         <DetailBlock
-                          label="manual_edited"
-                          value={sourceDetail.is_manual_edited ? "true" : "false"}
+                          label="逻辑状态"
+                          value={formatLogicalStatus(getSourceLogicalStatus(sourceDetail))}
+                        />
+                        <DetailBlock label="请求状态" value={formatRequestStatus(sourceDetail.request_status)} />
+                        <DetailBlock label="解析状态" value={formatParseStatus(sourceDetail.parse_status)} />
+                        <DetailBlock label="重试次数" value={String(sourceDetail.retry_count)} />
+                        <DetailBlock
+                          label="人工修订"
+                          value={formatBooleanText(sourceDetail.is_manual_edited)}
                         />
                       </div>
                       <label>
@@ -1596,11 +1725,11 @@ function App() {
                         <textarea rows={4} value={sourceDetail.input_text} readOnly />
                       </label>
                       <label>
-                        <span>request_payload</span>
+                        <span>请求内容</span>
                         <textarea rows={8} value={sourceDetail.request_payload || ""} readOnly />
                       </label>
                       <label>
-                        <span>raw_response</span>
+                        <span>模型返回</span>
                         <textarea
                           rows={10}
                           value={rawResponseDraft}
@@ -1608,11 +1737,11 @@ function App() {
                         />
                       </label>
                       <label>
-                        <span>cleaned_output_text</span>
+                        <span>解析结果</span>
                         <textarea rows={8} value={sourceDetail.cleaned_output_text || ""} readOnly />
                       </label>
                       <label>
-                        <span>error_message</span>
+                        <span>错误信息</span>
                         <textarea rows={6} value={sourceDetail.error_message || ""} readOnly />
                       </label>
                       <div className="inline-actions">
@@ -1622,7 +1751,7 @@ function App() {
                           onClick={handleSaveRawResponse}
                           disabled={isBusy("update-raw-response")}
                         >
-                          {isBusy("update-raw-response") ? "保存中..." : "保存 raw_response"}
+                          {isBusy("update-raw-response") ? "保存中..." : "保存模型返回"}
                         </button>
                         <button
                           className="ghost-button"
@@ -1630,7 +1759,7 @@ function App() {
                           onClick={handleReparse}
                           disabled={isBusy("reparse-source")}
                         >
-                          {isBusy("reparse-source") ? "重解析中..." : "执行 reparse"}
+                          {isBusy("reparse-source") ? "重新解析中..." : "重新解析"}
                         </button>
                         <button
                           className="ghost-button"
@@ -1643,11 +1772,11 @@ function App() {
                       </div>
                     </div>
                   ) : (
-                    <EmptyState title="未选择 source" description="从上方列表选择一条 source 记录后，这里会展示详情。" />
+                    <EmptyState title="未选择记录" description="请从上方列表选择一条记录。" />
                   )}
                 </SectionCard>
 
-                <SectionCard title="三元组编辑器" description="支持手工新增、编辑、删除。只展示当前 source 的有效三元组。">
+                <SectionCard title="三元组编辑器" description="支持手动新增、编辑、删除，仅展示当前记录的有效三元组。">
                   {selectedSourceId ? (
                     <TripleEditor
                       triples={triples}
@@ -1681,35 +1810,31 @@ function App() {
                       onDelete={handleDeleteTriple}
                     />
                   ) : (
-                    <EmptyState title="未选择 source" description="选中一条 source 后，即可在这里管理三元组。" />
+                    <EmptyState title="未选择记录" description="选中一条记录后，即可在这里管理三元组。" />
                   )}
                 </SectionCard>
               </div>
             </>
           ) : (
-            <EmptyState title="未选中项目" description="先到“项目与配置”标签创建并选中一个项目，再进入导入与抽取链路。" />
+            <EmptyState title="未选中项目" description="请先在“项目与配置”中创建并选中一个项目。" />
           )
         ) : null}
 
         {activeTab === "schema" ? (
           selectedProject ? (
             <>
-              <SectionCard
-                title="Schema 与图谱上下文"
-                description="当前页面覆盖 schema 刷新、类型维护、图谱初始化、导入与重建，以及导入日志查看。"
-              >
-                <div className="hint-grid">
-                  <HintItem label="项目名称" value={selectedProject.name} />
-                  <HintItem label="项目状态" value={selectedProject.status} />
-                  <HintItem label="最近导入" value={formatTime(selectedProject.last_import_at)} />
-                  <HintItem label="当前范围" value="不包含问答页、问答接口与 Cypher 链路" />
-                </div>
-              </SectionCard>
+              <ContextStrip
+                items={[
+                  { label: "当前项目", value: selectedProject.name },
+                  { label: "状态", value: formatProjectStatus(selectedProject.status) },
+                  { label: "最近导入", value: formatTime(selectedProject.last_import_at) },
+                ]}
+              />
 
               <div className="two-column-grid">
                 <SectionCard
-                  title="刷新 schema"
-                  description="从当前项目全部有效三元组中补充实体类型与关系类型，不自动删除旧项。"
+                  title="刷新类型"
+                  description="根据当前项目中的有效三元组补充实体类型与关系类型。"
                 >
                   <div className="stacked-block">
                     <div className="progress-grid">
@@ -1722,12 +1847,12 @@ function App() {
                       onClick={handleRefreshSchema}
                       disabled={isBusy("refresh-schema")}
                     >
-                      {isBusy("refresh-schema") ? "刷新中..." : "刷新 schema"}
+                      {isBusy("refresh-schema") ? "刷新中..." : "刷新类型"}
                     </button>
                   </div>
                 </SectionCard>
 
-                <SectionCard title="图谱操作" description="先初始化，再导入。三元组或 schema 变动后，建议使用 rebuild 重建。">
+                <SectionCard title="图谱操作" description="先初始化图谱，再执行导入。数据变更后可使用重建更新图谱。">
                   <div className="stacked-block">
                     <div className="inline-actions">
                       <button
@@ -1756,8 +1881,8 @@ function App() {
                       </button>
                     </div>
                     <p className="muted-note">
-                      当前项目状态：<strong>{selectedProject.status}</strong>。只有在 initialized 或 imported
-                      状态下才能继续导入或重建。
+                      当前项目状态：<strong>{formatProjectStatus(selectedProject.status)}</strong>
+                      。图谱初始化完成后，可继续执行导入或重建。
                     </p>
                   </div>
                 </SectionCard>
@@ -1824,12 +1949,12 @@ function App() {
                         </table>
                       </div>
                     ) : (
-                      <EmptyState title="暂无实体类型" description="先刷新 schema 或手工新增一个实体类型。" />
+                      <EmptyState title="暂无实体类型" description="请先刷新类型或手动新增一个实体类型。" />
                     )}
                   </div>
                 </SectionCard>
 
-                <SectionCard title="关系类型维护" description="关系改名会同步更新引用该关系的三元组 predicate。">
+                <SectionCard title="关系类型维护" description="关系改名会同步更新引用该关系的三元组关系名称。">
                   <div className="stacked-block">
                     <div className="inline-form">
                       <input
@@ -1895,7 +2020,7 @@ function App() {
                         </table>
                       </div>
                     ) : (
-                      <EmptyState title="暂无关系类型" description="先刷新 schema 或手工新增一个关系类型。" />
+                      <EmptyState title="暂无关系类型" description="请先刷新类型或手动新增一个关系类型。" />
                     )}
                   </div>
                 </SectionCard>
@@ -1921,9 +2046,9 @@ function App() {
                         {graphLogs.map((log) => (
                           <tr key={log.id}>
                             <td>{formatTime(log.created_at)}</td>
-                            <td>{log.mode}</td>
+                            <td>{formatImportMode(log.mode)}</td>
                             <td>
-                              <StatusBadge label={log.status} tone={getBatchStatusTone(log.status)} />
+                              <StatusBadge label={formatTaskStatus(log.status)} tone={getBatchStatusTone(log.status)} />
                             </td>
                             <td>{log.total_candidate_count}</td>
                             <td>{log.created_node_count}</td>
@@ -1941,7 +2066,7 @@ function App() {
               </SectionCard>
             </>
           ) : (
-            <EmptyState title="未选中项目" description="先到“项目与配置”标签选中一个项目，再进行 schema 和图谱操作。" />
+            <EmptyState title="未选中项目" description="请先在“项目与配置”中选中一个项目，再进行类型维护和图谱操作。" />
           )
         ) : null}
       </main>
@@ -1956,7 +2081,7 @@ function getTabLabel(tab: TabKey): string {
   if (tab === "batch") {
     return "导入与抽取";
   }
-  return "Schema 与图谱";
+  return "类型与图谱";
 }
 
 function TabButton({
@@ -2021,12 +2146,23 @@ function StatCard({
   );
 }
 
-function HintItem({ label, value }: { label: string; value: string }) {
+function ContextStrip({
+  items,
+}: {
+  items: Array<{
+    label: string;
+    value: string;
+  }>;
+}) {
   return (
-    <div className="hint-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <section className="context-strip" aria-label="当前上下文">
+      {items.map((item) => (
+        <div key={item.label} className="context-pill">
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -2088,11 +2224,11 @@ function TripleEditor({
           <table className="data-table">
             <thead>
               <tr>
-                <th>subject</th>
-                <th>subject_type</th>
-                <th>predicate</th>
-                <th>object</th>
-                <th>object_type</th>
+                <th>主体</th>
+                <th>主体类型</th>
+                <th>关系</th>
+                <th>客体</th>
+                <th>客体类型</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -2186,42 +2322,42 @@ function TripleEditor({
           </table>
         </div>
       ) : (
-        <EmptyState title="暂无三元组" description="可手工新增一条三元组，或先修正 raw_response 后执行 reparse。" />
+        <EmptyState title="暂无三元组" description="可手动新增一条三元组，或先修正模型返回内容后重新解析。" />
       )}
 
       <div className="subsection">
-        <h3>手工新增三元组</h3>
+        <h3>手动新增三元组</h3>
         <div className="form-grid triple-grid">
           <label>
-            <span>subject</span>
+            <span>主体</span>
             <input
               value={newTripleForm.subject}
               onChange={(event) => onNewChange("subject", event.target.value)}
             />
           </label>
           <label>
-            <span>subject_type</span>
+            <span>主体类型</span>
             <input
               value={newTripleForm.subjectType}
               onChange={(event) => onNewChange("subjectType", event.target.value)}
             />
           </label>
           <label>
-            <span>predicate</span>
+            <span>关系</span>
             <input
               value={newTripleForm.predicate}
               onChange={(event) => onNewChange("predicate", event.target.value)}
             />
           </label>
           <label>
-            <span>object</span>
+            <span>客体</span>
             <input
               value={newTripleForm.object}
               onChange={(event) => onNewChange("object", event.target.value)}
             />
           </label>
           <label>
-            <span>object_type</span>
+            <span>客体类型</span>
             <input
               value={newTripleForm.objectType}
               onChange={(event) => onNewChange("objectType", event.target.value)}

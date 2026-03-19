@@ -6,6 +6,10 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
+const backendErrorMessageMap: Record<string, string> = {
+  CONFIG_IN_USE: "该抽取配置正在被项目使用，不能直接删除。请先删除相关项目，或把项目切换到其他抽取配置。",
+};
+
 export class ApiClientError extends Error {
   code?: number;
   status?: number;
@@ -33,7 +37,7 @@ function buildBackendErrorMessage(payload: Partial<ApiEnvelope<unknown>> | undef
   }
 
   if (typeof payload.message === "string" && payload.message.trim()) {
-    return payload.message;
+    return backendErrorMessageMap[payload.message] ?? payload.message;
   }
 
   return "请求失败";

@@ -12,10 +12,10 @@ function makeSuffix(): string {
 
 export function buildDemoConfigDraft() {
   return {
-    name: `CMeIE演示抽取配置-${makeSuffix()}`,
-    baseUrl: "mock://extract",
-    apiKey: "demo-key",
-    modelName: "mock-cmeie-v2",
+    name: `抽取配置-${makeSuffix()}`,
+    baseUrl: "",
+    apiKey: "",
+    modelName: "",
     timeoutSeconds: "60",
     providerOptionsText: "",
   };
@@ -23,14 +23,13 @@ export function buildDemoConfigDraft() {
 
 export function buildDemoProjectDraft(defaultConfigId = "") {
   return {
-    name: `CMeIE演示项目-${makeSuffix()}`,
-    description: "使用 CMeIE 前10条样例与数据驱动 mock 的一期演示项目",
+    name: `项目-${makeSuffix()}`,
+    description: "用于管理当前业务数据的抽取与图谱处理流程",
     extractConfigId: defaultConfigId,
   };
 }
 
-export const DEMO_SAMPLE_FILE_HINT =
-  "建议上传 data/CMeIE-V2_前10条_系统导入输入.txt 作为演示样例。";
+export const DEMO_SAMPLE_FILE_HINT = "支持上传 UTF-8 编码的 .txt 文件。";
 
 export const DEMO_INSTRUCTION = `你是一个医学文本三元组抽取助手。请从给定文本中抽取所有能够被原文直接支持的关系三元组，并严格按要求输出。
 

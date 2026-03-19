@@ -211,8 +211,6 @@ def retry_single_source(
         raise AppError("BATCH_ALREADY_EXTRACTING", code=4093, status_code=409)
     if not batch.instruction:
         raise AppError("BATCH_INSTRUCTION_REQUIRED", code=4007, status_code=400)
-    if source.request_status != "failed" and source.parse_status != "failed":
-        raise AppError("SOURCE_NOT_RETRYABLE", code=4008, status_code=400)
 
     _mark_source_for_retry(source)
     batch.status = "extracting"
