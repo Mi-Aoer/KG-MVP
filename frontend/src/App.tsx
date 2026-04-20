@@ -64,6 +64,8 @@ import {
 } from "./demoDefaults";
 import "./App.css";
 
+const neo4jBrowserUrl = import.meta.env.VITE_NEO4J_BROWSER_URL ?? "http://localhost:7474/browser/";
+
 interface NoticeState {
   tone: "success" | "error";
   text: string;
@@ -328,6 +330,47 @@ function formatBooleanText(value: boolean): string {
   return value ? "是" : "否";
 }
 
+function canOpenGraphInNeo4j(status: string): boolean {
+  return status === "initialized" || status === "imported";
+}
+
+function escapeCypherString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function buildNeo4jProjectViewQuery(projectId: string): string {
+  const safeProjectId = escapeCypherString(projectId);
+  return [
+    `MATCH (n:KGEntity {project_id: '${safeProjectId}'})`,
+    `OPTIONAL MATCH (n)-[r:RELATED_TO {project_id: '${safeProjectId}'}]->(m:KGEntity {project_id: '${safeProjectId}'})`,
+    "RETURN n, r, m",
+    "LIMIT 200;",
+  ].join("\n");
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!copied) {
+    throw new Error("复制失败");
+  }
+}
+
 function isSourceRetryable(source: SourceSummary | SourceDetail): boolean {
   return source.request_status !== "running";
 }
@@ -368,6 +411,18 @@ function App() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const activeProgress = progress?.batch_id === selectedBatchId ? progress : null;
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice(null);
+    }, notice.tone === "error" ? 4500 : 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
   const configUsageCountMap = projects.reduce<Record<string, number>>((result, project) => {
     result[project.extract_config_id] = (result[project.extract_config_id] ?? 0) + 1;
     return result;
@@ -1132,6 +1187,42 @@ function App() {
     );
   }
 
+  async function handleOpenNeo4jBrowser() {
+    if (!selectedProject) {
+      showError("请先选中项目。");
+      return;
+    }
+
+    const query = buildNeo4jProjectViewQuery(selectedProject.id);
+    let copied = false;
+
+    try {
+      await copyTextToClipboard(query);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+
+    const openedWindow = window.open(neo4jBrowserUrl, "_blank", "noopener");
+
+    if (copied && openedWindow) {
+      showSuccess("已复制 Neo4j 查询，并打开 Neo4j Browser。");
+      return;
+    }
+
+    if (copied) {
+      showSuccess(`已复制 Neo4j 查询。请手动打开 ${neo4jBrowserUrl}`);
+      return;
+    }
+
+    if (openedWindow) {
+      showError("已打开 Neo4j Browser，但复制查询失败。");
+      return;
+    }
+
+    showError("复制查询或打开 Neo4j Browser 失败。");
+  }
+
   return (
     <div className="app-shell">
       <header className="hero-panel">
@@ -1173,11 +1264,13 @@ function App() {
       </nav>
 
       {notice ? (
-        <div className={`notice-banner notice-${notice.tone}`}>
-          <span>{notice.text}</span>
-          <button className="ghost-button" type="button" onClick={() => setNotice(null)}>
-            关闭
-          </button>
+        <div className="notice-layer" aria-live="polite">
+          <div className={`notice-banner notice-${notice.tone}`}>
+            <span>{notice.text}</span>
+            <button className="ghost-button" type="button" onClick={() => setNotice(null)}>
+              关闭
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -1878,6 +1971,14 @@ function App() {
                         disabled={isBusy("graph-rebuild")}
                       >
                         {isBusy("graph-rebuild") ? "重建中..." : "重建图谱"}
+                      </button>
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={handleOpenNeo4jBrowser}
+                        disabled={!canOpenGraphInNeo4j(selectedProject.status) || isBusy("graph-init")}
+                      >
+                        复制查询并打开 Neo4j
                       </button>
                     </div>
                     <p className="muted-note">

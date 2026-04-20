@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+import app.services.llm_client as llm_client_module
 from app.services.llm_client import LLMClientError, OpenAICompatibleClient
 
 
@@ -152,3 +153,96 @@ def test_call_error_message_contains_required_diagnostics(monkeypatch):
     assert "exception=ValueError" in exc_info.value.message
     assert "model=deepseek-ai/DeepSeek-V3.2" in exc_info.value.message
     assert "request_url=https://api.siliconflow.cn/v1/chat/completions" in exc_info.value.message
+
+
+def test_mock_client_maps_military_triples(monkeypatch, tmp_path):
+    dataset_path = tmp_path / "mock_dataset.json"
+    sample_output = json.dumps(
+        [
+            {
+                "head": "MQ-8C",
+                "head_type": "Asset",
+                "relation": "deployed_by",
+                "tail": "美国海军",
+                "tail_type": "Actor",
+            }
+        ],
+        ensure_ascii=False,
+    )
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "instruction": "unused",
+                    "input": "样例输入",
+                    "output": sample_output,
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(llm_client_module, "MOCK_DATASET_PATH", dataset_path)
+    llm_client_module._load_mock_extract_dataset.cache_clear()
+    try:
+        client = llm_client_module.MockCompatibleClient()
+        raw_response = client.call(
+            base_url="mock://extract",
+            api_key="sk-test",
+            model_name="mock-model",
+            instruction="ignored",
+            input_text="样例输入",
+            timeout_seconds=5,
+        )
+    finally:
+        llm_client_module._load_mock_extract_dataset.cache_clear()
+
+    payload = json.loads(raw_response)
+    triples = json.loads(payload["output"])
+    assert triples == [
+        {
+            "subject": "MQ-8C",
+            "subject_type": "Asset",
+            "predicate": "deployed_by",
+            "object": "美国海军",
+            "object_type": "Actor",
+        }
+    ]
+    assert payload["provider_response"]["mode"] == "dataset_exact"
+
+
+def test_mock_client_returns_empty_array_when_input_not_found(monkeypatch, tmp_path):
+    dataset_path = tmp_path / "mock_dataset.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "instruction": "unused",
+                    "input": "命中输入",
+                    "output": "[]",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(llm_client_module, "MOCK_DATASET_PATH", dataset_path)
+    llm_client_module._load_mock_extract_dataset.cache_clear()
+    try:
+        client = llm_client_module.MockCompatibleClient()
+        raw_response = client.call(
+            base_url="mock://extract",
+            api_key="sk-test",
+            model_name="mock-model",
+            instruction="ignored",
+            input_text="未命中输入",
+            timeout_seconds=5,
+        )
+    finally:
+        llm_client_module._load_mock_extract_dataset.cache_clear()
+
+    payload = json.loads(raw_response)
+    assert payload["output"] == "[]"
+    assert payload["provider_response"]["mode"] == "dataset_miss"

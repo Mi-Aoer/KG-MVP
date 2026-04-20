@@ -8,7 +8,23 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-MOCK_DATASET_PATH = PROJECT_ROOT / "data" / "CMeIE-V2_测试用数据集.json"
+MOCK_DATASET_PATH = PROJECT_ROOT / "data" / "军事新闻实体关系抽取数据集_1000条.json"
+
+REQUIRED_TRIPLE_KEYS = (
+    "subject",
+    "subject_type",
+    "predicate",
+    "object",
+    "object_type",
+)
+
+MILITARY_TRIPLE_KEYS = (
+    "head",
+    "head_type",
+    "relation",
+    "tail",
+    "tail_type",
+)
 
 
 class LLMClientError(Exception):
@@ -303,9 +319,61 @@ def _load_mock_extract_dataset() -> dict[str, str]:
         output_text = item.get("output")
         if not isinstance(input_text, str) or not isinstance(output_text, str):
             continue
-        dataset[input_text] = output_text
+
+        normalized_output = _normalize_mock_output_text(output_text)
+        if normalized_output is None:
+            continue
+        dataset[input_text] = normalized_output
 
     return dataset
+
+
+def _normalize_mock_output_text(output_text: str) -> str | None:
+    try:
+        raw_data = json.loads(output_text)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(raw_data, list):
+        return None
+
+    normalized_triples: list[dict[str, str]] = []
+    for item in raw_data:
+        triple = _normalize_mock_triple(item)
+        if triple is None:
+            continue
+        normalized_triples.append(triple)
+
+    return json.dumps(normalized_triples, ensure_ascii=False)
+
+
+def _normalize_mock_triple(item: object) -> dict[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+
+    if all(key in item for key in REQUIRED_TRIPLE_KEYS):
+        triple = {
+            "subject": str(item["subject"]).strip(),
+            "subject_type": str(item["subject_type"]).strip(),
+            "predicate": str(item["predicate"]).strip(),
+            "object": str(item["object"]).strip(),
+            "object_type": str(item["object_type"]).strip(),
+        }
+    elif all(key in item for key in MILITARY_TRIPLE_KEYS):
+        triple = {
+            "subject": str(item["head"]).strip(),
+            "subject_type": str(item["head_type"]).strip(),
+            "predicate": str(item["relation"]).strip(),
+            "object": str(item["tail"]).strip(),
+            "object_type": str(item["tail_type"]).strip(),
+        }
+    else:
+        return None
+
+    if not all(triple.values()):
+        return None
+
+    return triple
 
 
 class MockCompatibleClient:

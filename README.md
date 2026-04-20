@@ -109,9 +109,16 @@ CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
 ## 演示数据
 
-- txt 样例：`data/CMeIE-V2_前10条_系统导入输入.txt`
-- 可直接使用的 instruction：`data/CMeIE-V2_instruction_系统可直接使用.txt`
-- mock 数据集：`data/CMeIE-V2_测试用数据集.json`
+- txt 样例：`data/军事新闻实体关系抽取_前10条_系统导入输入.txt`
+- 可直接使用的 instruction：`data/军事新闻实体关系抽取_instruction_系统可直接使用.txt`
+- mock 数据集：`data/军事新闻实体关系抽取数据集_1000条.json`
+
+当前 `mock://extract` 逻辑说明：
+
+- 按 `input_text` 匹配军事数据集中的 `input` 返回结果。
+- 数据集中原始 `head/head_type/relation/tail/tail_type` 会在 mock 层自动映射为系统标准字段：
+  `subject/subject_type/predicate/object/object_type`。
+- 若未命中数据集，mock 返回 `[]`。
 
 ## 开发验收顺序
 
@@ -169,6 +176,7 @@ Swagger 仍是最完整的在线接口说明入口。
 - 真实抽取输出混入解释文本：优先使用 `deepseek-ai/DeepSeek-V3.2`，不要把 `DeepSeek-R1` 当作当前默认结构化抽取模型。
 - `pytest` 无法导入应用：请从 `backend/` 目录执行 `python -m pytest`。
 - 前端真实联调失败：先用 mock 配置完成一遍链路，再切换真实 provider 排查。
+- mock 抽取大量返回空数组：检查上传 txt 每一行是否与 `data/军事新闻实体关系抽取数据集_1000条.json` 的 `input` 可匹配（至少内容一致）。
 
 ## 许可
 
