@@ -1,4 +1,4 @@
-export type TabKey = "project" | "batch" | "schema";
+export type TabKey = "project" | "batch" | "schema" | "qa";
 
 export interface ModelConfig {
   id: string;
@@ -153,6 +153,23 @@ export interface GraphImportLog {
   error_message: string | null;
   created_at: string;
   finished_at: string | null;
+}
+
+export interface QAEvidence {
+  subject: string;
+  subject_type: string;
+  predicate: string;
+  object: string;
+  object_type: string;
+  source_text: string;
+}
+
+export interface QAAskResult {
+  project_id: string;
+  question: string;
+  answer: string;
+  matched_count: number;
+  evidence: QAEvidence[];
 }
 
 export interface CreateConfigPayload {

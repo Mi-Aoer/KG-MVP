@@ -39,6 +39,31 @@ docs/      修订版主文档、进度记录、交付补充文档
 
 ## 后端启动
 
+推荐使用长期稳妥脚本（规避 iCloud `dataless` 占位文件导致的导入卡顿）：
+
+```bash
+bash backend/scripts/start_backend_stable.sh
+```
+
+可选参数示例：
+
+```bash
+KGQA_BACKEND_VENV=$HOME/.venvs/kg-mvp-backend-py311 \
+HOST=127.0.0.1 \
+PORT=8000 \
+RELOAD=1 \
+bash backend/scripts/start_backend_stable.sh
+```
+
+脚本行为：
+
+- 默认使用项目目录外虚拟环境：`$HOME/.venvs/kg-mvp-backend-py311`
+- 首次自动创建 `venv`；`requirements.txt` 变更时自动重新安装依赖
+- 启动前检测 `backend/app` 中的 iCloud `dataless` 文件并给出明确报错
+- 自动清理 `backend/app/__pycache__`，降低损坏 `pyc` 导致的启动阻塞概率
+
+传统方式（可选）：
+
 ```bash
 cd backend
 source .venv/bin/activate

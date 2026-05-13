@@ -45,8 +45,14 @@ ON CREATE SET
   r.first_batch_id = $batch_id,
   r.first_source_id = $source_id,
   r.first_line_no = $line_no,
+  r.first_source_text = $source_text,
   r.created_at = $now
-SET r.updated_at = $now
+SET
+  r.first_batch_id = coalesce(r.first_batch_id, $batch_id),
+  r.first_source_id = coalesce(r.first_source_id, $source_id),
+  r.first_line_no = coalesce(r.first_line_no, $line_no),
+  r.first_source_text = coalesce(r.first_source_text, $source_text),
+  r.updated_at = $now
 """
 
 
@@ -128,6 +134,7 @@ def _load_valid_triples(db: Session, project_id: str) -> list[dict]:
             ExtractedTriple.batch_id,
             ExtractedTriple.source_id,
             SourceRecord.line_no,
+            SourceRecord.input_text,
         )
         .join(SourceRecord, SourceRecord.id == ExtractedTriple.source_id)
         .where(
@@ -152,6 +159,7 @@ def _load_valid_triples(db: Session, project_id: str) -> list[dict]:
             "batch_id": row.batch_id,
             "source_id": row.source_id,
             "line_no": row.line_no,
+            "source_text": row.input_text or "",
         }
         for row in rows
     ]
@@ -175,6 +183,7 @@ def _group_candidate_triples(rows: Iterable[dict]) -> tuple[list[dict], int]:
                 "batch_id": row["batch_id"],
                 "source_id": row["source_id"],
                 "line_no": row["line_no"],
+                "source_text": row["source_text"],
                 "triple_ids": [row["id"]],
                 "conflict": False,
             }
@@ -286,6 +295,7 @@ def import_graph(db: Session, project_id: str, mode: str = "incremental") -> dic
                         batch_id=item["batch_id"],
                         source_id=item["source_id"],
                         line_no=item["line_no"],
+                        source_text=item["source_text"],
                         now=now,
                     )
                     summary = result.consume()

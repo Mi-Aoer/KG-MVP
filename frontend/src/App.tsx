@@ -33,6 +33,7 @@ import {
   updateConfig,
   updateProject,
 } from "./api/project";
+import { askQuestion } from "./api/qa";
 import {
   createEntityType,
   createRelationType,
@@ -51,6 +52,7 @@ import type {
   ModelConfig,
   Project,
   ProjectSchema,
+  QAAskResult,
   SourceDetail,
   SourceSummary,
   TabKey,
@@ -407,10 +409,16 @@ function App() {
   const [newEntityTypeName, setNewEntityTypeName] = useState("");
   const [newRelationTypeName, setNewRelationTypeName] = useState("");
   const [graphLogs, setGraphLogs] = useState<GraphImportLog[]>([]);
+  const [qaQuestion, setQaQuestion] = useState("");
+  const [qaResult, setQaResult] = useState<QAAskResult | null>(null);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const activeProgress = progress?.batch_id === selectedBatchId ? progress : null;
+
+  useEffect(() => {
+    setQaResult(null);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!notice) {
@@ -1223,6 +1231,39 @@ function App() {
     showError("复制查询或打开 Neo4j Browser 失败。");
   }
 
+  async function handleAskQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedProjectId) {
+      showError("请先选中项目。");
+      return;
+    }
+
+    const question = qaQuestion.trim();
+    if (!question) {
+      showError("请输入问题。");
+      return;
+    }
+
+    const result = await runTask("qa-ask", () => askQuestion(selectedProjectId, question));
+    if (!result) {
+      return;
+    }
+
+    setQaResult(result);
+    showSuccess(`检索完成，命中 ${result.matched_count} 条关系。`);
+  }
+
+  function handleUseSourceTextForQuestion(sourceText: string) {
+    const normalized = sourceText.trim();
+    if (!normalized) {
+      showError("该证据没有可用的来源文本。");
+      return;
+    }
+    setQaQuestion(normalized);
+    showSuccess("已将来源文本填入问题输入框。");
+  }
+
   return (
     <div className="app-shell">
       <header className="hero-panel">
@@ -1260,6 +1301,11 @@ function App() {
           active={activeTab === "schema"}
           onClick={() => setActiveTab("schema")}
           label="类型与图谱"
+        />
+        <TabButton
+          active={activeTab === "qa"}
+          onClick={() => setActiveTab("qa")}
+          label="图谱问答"
         />
       </nav>
 
@@ -2170,6 +2216,116 @@ function App() {
             <EmptyState title="未选中项目" description="请先在“项目与配置”中选中一个项目，再进行类型维护和图谱操作。" />
           )
         ) : null}
+
+        {activeTab === "qa" ? (
+          selectedProject ? (
+            <>
+              <ContextStrip
+                items={[
+                  { label: "当前项目", value: selectedProject.name },
+                  { label: "状态", value: formatProjectStatus(selectedProject.status) },
+                  { label: "最近导入", value: formatTime(selectedProject.last_import_at) },
+                ]}
+              />
+
+              <div className="two-column-grid">
+                <SectionCard
+                  title="图谱问答"
+                  description="输入自然语言问题，系统会在当前项目图谱中检索匹配的实体和关系。"
+                >
+                  <form className="stacked-block" onSubmit={handleAskQuestion}>
+                    <label>
+                      <span>问题</span>
+                      <textarea
+                        rows={4}
+                        value={qaQuestion}
+                        onChange={(event) => setQaQuestion(event.target.value)}
+                        placeholder="示例：俄军导弹旅与哪些导弹系统相关？"
+                      />
+                    </label>
+                    <div className="inline-actions">
+                      <button className="primary-button" type="submit" disabled={isBusy("qa-ask")}>
+                        {isBusy("qa-ask") ? "检索中..." : "提问"}
+                      </button>
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={() => {
+                          setQaQuestion("");
+                          setQaResult(null);
+                        }}
+                      >
+                        清空
+                      </button>
+                    </div>
+                  </form>
+                </SectionCard>
+
+                <SectionCard title="回答摘要" description="展示当前问题的检索结果与命中条数。">
+                  {qaResult ? (
+                    <div className="stacked-block">
+                      <p>{qaResult.answer}</p>
+                      <div className="progress-grid">
+                        <StatCard label="命中关系数" value={String(qaResult.matched_count)} tone="info" />
+                        <StatCard label="问题长度" value={String(qaResult.question.length)} />
+                      </div>
+                    </div>
+                  ) : (
+                    <EmptyState title="暂无回答" description="输入问题后点击“提问”，这里会显示检索摘要。" />
+                  )}
+                </SectionCard>
+              </div>
+
+              <SectionCard title="证据三元组" description="展示命中的图谱关系，用于支撑回答内容。">
+                {qaResult?.evidence.length ? (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>主语</th>
+                          <th>主语类型</th>
+                          <th>关系</th>
+                          <th>宾语</th>
+                          <th>宾语类型</th>
+                          <th>来源文本</th>
+                          <th>联动</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qaResult.evidence.map((item, index) => (
+                          <tr key={`${item.subject}-${item.predicate}-${item.object}-${index}`}>
+                            <td>{item.subject}</td>
+                            <td>{item.subject_type}</td>
+                            <td>{item.predicate}</td>
+                            <td>{item.object}</td>
+                            <td>{item.object_type}</td>
+                            <td title={item.source_text || "-"}>
+                              {item.source_text ? truncateText(item.source_text, 120) : "-"}
+                            </td>
+                            <td>
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                onClick={() => handleUseSourceTextForQuestion(item.source_text)}
+                                disabled={!item.source_text}
+                              >
+                                引用来源文本
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <EmptyState title="暂无证据" description="没有匹配关系时，这里会保持为空。" />
+                )}
+              </SectionCard>
+            </>
+          ) : (
+            <EmptyState title="未选中项目" description="请先在“项目与配置”中选中一个项目，再进行图谱问答。" />
+          )
+        ) : null}
       </main>
     </div>
   );
@@ -2181,6 +2337,9 @@ function getTabLabel(tab: TabKey): string {
   }
   if (tab === "batch") {
     return "导入与抽取";
+  }
+  if (tab === "qa") {
+    return "图谱问答";
   }
   return "类型与图谱";
 }

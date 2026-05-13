@@ -12,6 +12,7 @@ from app.api.routes.extract import router as extract_router
 from app.api.routes.graph import router as graph_router
 from app.api.routes.health import router as health_router
 from app.api.routes.projects import router as projects_router
+from app.api.routes.qa import router as qa_router
 from app.api.routes.schema import router as schema_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.triples import router as triples_router
@@ -86,3 +87,4 @@ app.include_router(sources_router)
 app.include_router(triples_router)
 app.include_router(schema_router)
 app.include_router(graph_router)
+app.include_router(qa_router)
