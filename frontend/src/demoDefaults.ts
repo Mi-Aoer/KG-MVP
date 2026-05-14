@@ -16,7 +16,8 @@ export function buildDemoConfigDraft() {
     baseUrl: "",
     apiKey: "",
     modelName: "",
-    timeoutSeconds: "60",
+    timeoutSeconds: "180",
+    maxTokens: "1024",
     providerOptionsText: "",
   };
 }

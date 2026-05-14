@@ -23,6 +23,10 @@ die() {
 }
 
 detect_python() {
+  if command -v py >/dev/null 2>&1 && py -3.11 --version >/dev/null 2>&1; then
+    echo "py -3.11"
+    return
+  fi
   if command -v python3.11 >/dev/null 2>&1; then
     echo "python3.11"
     return
@@ -31,7 +35,43 @@ detect_python() {
     echo "python3"
     return
   fi
-  die "python3.11 or python3 is required"
+  die "python3.11, py -3.11, or python3 is required"
+}
+
+venv_python() {
+  if [[ -x "${KGQA_BACKEND_VENV}/bin/python" ]]; then
+    echo "${KGQA_BACKEND_VENV}/bin/python"
+    return
+  fi
+  if [[ -x "${KGQA_BACKEND_VENV}/Scripts/python.exe" ]]; then
+    echo "${KGQA_BACKEND_VENV}/Scripts/python.exe"
+    return
+  fi
+  return 1
+}
+
+venv_pip() {
+  if [[ -x "${KGQA_BACKEND_VENV}/bin/pip" ]]; then
+    echo "${KGQA_BACKEND_VENV}/bin/pip"
+    return
+  fi
+  if [[ -x "${KGQA_BACKEND_VENV}/Scripts/pip.exe" ]]; then
+    echo "${KGQA_BACKEND_VENV}/Scripts/pip.exe"
+    return
+  fi
+  return 1
+}
+
+venv_uvicorn() {
+  if [[ -x "${KGQA_BACKEND_VENV}/bin/uvicorn" ]]; then
+    echo "${KGQA_BACKEND_VENV}/bin/uvicorn"
+    return
+  fi
+  if [[ -x "${KGQA_BACKEND_VENV}/Scripts/uvicorn.exe" ]]; then
+    echo "${KGQA_BACKEND_VENV}/Scripts/uvicorn.exe"
+    return
+  fi
+  return 1
 }
 
 supports_dataless_check() {
@@ -67,18 +107,21 @@ ensure_env_file() {
 
 ensure_venv() {
   local py_bin="$1"
-  if [[ -x "${KGQA_BACKEND_VENV}/bin/python" ]]; then
+  local py_cmd=()
+  if venv_python >/dev/null 2>&1; then
     return
   fi
 
   mkdir -p "$(dirname -- "${KGQA_BACKEND_VENV}")"
   log "creating venv at ${KGQA_BACKEND_VENV}"
-  "${py_bin}" -m venv "${KGQA_BACKEND_VENV}"
+  read -r -a py_cmd <<< "${py_bin}"
+  "${py_cmd[@]}" -m venv "${KGQA_BACKEND_VENV}"
 }
 
 sync_requirements() {
   local req_hash=""
   local old_hash=""
+  local python_bin=""
 
   req_hash="$(shasum -a 256 "${REQ_FILE}" | awk '{print $1}')"
   if [[ -f "${REQ_HASH_FILE}" ]]; then
@@ -91,8 +134,9 @@ sync_requirements() {
   fi
 
   log "installing dependencies from ${REQ_FILE}"
-  "${KGQA_BACKEND_VENV}/bin/pip" install --upgrade pip
-  "${KGQA_BACKEND_VENV}/bin/pip" install -r "${REQ_FILE}"
+  python_bin="$(venv_python)"
+  "${python_bin}" -m pip install --upgrade pip
+  "${python_bin}" -m pip install -r "${REQ_FILE}"
   printf '%s\n' "${req_hash}" > "${REQ_HASH_FILE}"
 }
 
@@ -102,6 +146,7 @@ clear_pycache() {
 
 main() {
   local py_bin=""
+  local uvicorn_bin=""
   py_bin="$(detect_python)"
 
   check_dataless_files
@@ -111,6 +156,7 @@ main() {
   clear_pycache
 
   cd "${BACKEND_DIR}"
+  uvicorn_bin="$(venv_uvicorn)"
   log "project root: ${PROJECT_ROOT}"
   log "starting backend on http://${HOST}:${PORT} (reload=${RELOAD})"
 
@@ -126,7 +172,7 @@ main() {
       ;;
   esac
 
-  exec env PYTHONPATH=. "${KGQA_BACKEND_VENV}/bin/uvicorn" "${uvicorn_args[@]}"
+  exec env PYTHONPATH=. "${uvicorn_bin}" "${uvicorn_args[@]}"
 }
 
 main "$@"

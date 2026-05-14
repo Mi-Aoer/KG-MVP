@@ -8,6 +8,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_STRUCTURED_MAX_TOKENS = 1024
 MOCK_DATASET_PATH = PROJECT_ROOT / "data" / "军事新闻实体关系抽取数据集_1000条.json"
 
 REQUIRED_TRIPLE_KEYS = (
@@ -101,7 +102,7 @@ class OpenAICompatibleClient:
             options["extra_body"] = {"thinking_budget": 128}
 
         if self._is_structured_task(instruction):
-            options["max_tokens"] = 256
+            options["max_tokens"] = DEFAULT_STRUCTURED_MAX_TOKENS
 
         return self._merge_options(options, provider_options)
 

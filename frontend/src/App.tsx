@@ -79,6 +79,7 @@ interface ConfigFormState {
   apiKey: string;
   modelName: string;
   timeoutSeconds: string;
+  maxTokens: string;
   providerOptionsText: string;
 }
 
@@ -127,6 +128,42 @@ function parseProviderOptionsText(text: string): Record<string, unknown> | null 
     throw new Error("扩展参数必须是 JSON 对象，或留空。");
   }
   return parsed as Record<string, unknown>;
+}
+
+function extractMaxTokens(value: Record<string, unknown> | null): string {
+  const rawValue = value?.max_tokens;
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return String(rawValue);
+  }
+  if (typeof rawValue === "string" && rawValue.trim()) {
+    return rawValue.trim();
+  }
+  return "1024";
+}
+
+function omitMaxTokens(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+
+  const { max_tokens: _maxTokens, ...rest } = value;
+  void _maxTokens;
+  return Object.keys(rest).length > 0 ? rest : null;
+}
+
+function mergeMaxTokens(
+  providerOptions: Record<string, unknown> | null,
+  maxTokensText: string,
+): Record<string, unknown> | null {
+  const maxTokens = Number(maxTokensText);
+  if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+    throw new Error("max_tokens must be a positive integer.");
+  }
+
+  return {
+    ...(providerOptions ?? {}),
+    max_tokens: maxTokens,
+  };
 }
 
 function stringifyProviderOptions(value: Record<string, unknown> | null): string {
@@ -665,6 +702,7 @@ function App() {
     let providerOptions: Record<string, unknown> | null = null;
     try {
       providerOptions = parseProviderOptionsText(configForm.providerOptionsText);
+      providerOptions = mergeMaxTokens(providerOptions, configForm.maxTokens);
     } catch (error) {
       showError(getErrorMessage(error));
       return;
@@ -729,7 +767,8 @@ function App() {
       apiKey: "",
       modelName: config.model_name,
       timeoutSeconds: String(config.timeout_seconds),
-      providerOptionsText: stringifyProviderOptions(config.provider_options),
+      maxTokens: extractMaxTokens(config.provider_options),
+      providerOptionsText: stringifyProviderOptions(omitMaxTokens(config.provider_options)),
     });
   }
 
@@ -1391,6 +1430,20 @@ function App() {
                         setConfigForm((current) => ({
                           ...current,
                           timeoutSeconds: event.target.value,
+                        }))
+                      }
+                      inputMode="numeric"
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>max_tokens</span>
+                    <input
+                      value={configForm.maxTokens}
+                      onChange={(event) =>
+                        setConfigForm((current) => ({
+                          ...current,
+                          maxTokens: event.target.value,
                         }))
                       }
                       inputMode="numeric"

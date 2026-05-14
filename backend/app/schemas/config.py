@@ -3,13 +3,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+DEFAULT_MODEL_TIMEOUT_SECONDS = 180
+
+
 class ModelConfigCreateDTO(BaseModel):
     config_type: Literal["extract"] = "extract"
     name: str = Field(min_length=1, max_length=100)
     base_url: str
     api_key: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
-    timeout_seconds: int = Field(default=60, ge=1, le=600)
+    timeout_seconds: int = Field(default=DEFAULT_MODEL_TIMEOUT_SECONDS, ge=1, le=600)
     provider_options: dict[str, Any] | None = None
 
 

@@ -128,7 +128,7 @@ CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
 - `base_url=https://api.siliconflow.cn/v1`
 - `model_name=deepseek-ai/DeepSeek-V3.2`
-- `provider_options={"temperature":0.6,"top_p":0.95,"max_tokens":256}`
+- `provider_options={"temperature":0.6,"top_p":0.95,"max_tokens":1024}`
 
 `api_key` 请在页面或接口创建配置时传入，不要写入 Git 跟踪文件。
 

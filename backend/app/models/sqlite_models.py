@@ -6,6 +6,9 @@ from app.utils.id_utils import uuid_str
 from app.utils.time_utils import utcnow_str
 
 
+DEFAULT_MODEL_TIMEOUT_SECONDS = 180
+
+
 class ModelConfig(Base):
     __tablename__ = "model_configs"
 
@@ -15,7 +18,11 @@ class ModelConfig(Base):
     base_url: Mapped[str] = mapped_column(Text, nullable=False)
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    timeout_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=DEFAULT_MODEL_TIMEOUT_SECONDS,
+    )
     provider_options: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow_str)

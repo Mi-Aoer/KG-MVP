@@ -95,6 +95,31 @@ def test_reparse_source_accepts_markdown_json_block(model_factory, db_session):
     assert result["triple_count"] == 1
 
 
+def test_reparse_source_strips_think_block(model_factory, db_session):
+    output = """<think>
+I should reason about the extraction first.
+</think>
+[
+  {
+    "subject": "MQ-8C",
+    "subject_type": "Asset",
+    "predicate": "tested_by",
+    "object": "US Navy",
+    "object_type": "Actor"
+  }
+]"""
+    context = model_factory.create_source_context(
+        raw_response=json.dumps({"output": output}, ensure_ascii=False)
+    )
+
+    result = parse_service.reparse_source(db_session, context.source.id)
+
+    assert result["parse_status"] == "success"
+    assert result["triple_count"] == 1
+    assert context.source.cleaned_output_text.startswith("[")
+    assert "<think>" not in context.source.cleaned_output_text
+
+
 def test_reparse_source_rejects_invalid_json_output(model_factory, db_session):
     context = model_factory.create_source_context(
         raw_response=json.dumps({"output": "[{"}, ensure_ascii=False)

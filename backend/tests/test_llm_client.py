@@ -78,7 +78,7 @@ def test_build_request_options_injects_structured_defaults_for_v32():
 
     assert options["temperature"] == 0.6
     assert options["top_p"] == 0.95
-    assert options["max_tokens"] == 256
+    assert options["max_tokens"] == 1024
     assert "extra_body" not in options
 
 
@@ -125,7 +125,7 @@ def test_call_aggregates_stream_chunks(monkeypatch):
     assert payload["output"] == "前半段后半段"
     assert payload["provider_response"]["stream"] is True
     assert payload["provider_response"]["chunk_count"] == 2
-    assert payload["provider_response"]["request_payload"]["max_tokens"] == 256
+    assert payload["provider_response"]["request_payload"]["max_tokens"] == 1024
 
 
 def test_call_error_message_contains_required_diagnostics(monkeypatch):

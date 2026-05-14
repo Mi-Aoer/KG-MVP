@@ -17,6 +17,7 @@ class ParseError(Exception):
 
 def clean_output_text(output_text: str) -> str:
     text = output_text.strip()
+    text = re.sub(r"<think\b[^>]*>.*?</think>\s*", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     return text.strip()
