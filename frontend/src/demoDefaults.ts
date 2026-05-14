@@ -31,7 +31,7 @@ export function buildDemoProjectDraft(defaultConfigId = "") {
 }
 
 export const DEMO_SAMPLE_FILE_HINT =
-  "支持 UTF-8 编码的 .txt 文件，演示建议：data/军事新闻实体关系抽取_前10条_系统导入输入.txt";
+  "支持 UTF-8 编码的 .txt 文件";
 
 export const DEMO_INSTRUCTION = `你是一名军事新闻关系三元组抽取专家。你的任务是从输入文本中抽取关系，并输出 JSON 数组。
 

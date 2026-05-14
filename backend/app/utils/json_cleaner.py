@@ -15,12 +15,26 @@ class ParseError(Exception):
     pass
 
 
+def _extract_first_json_array(text: str) -> str | None:
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\[", text):
+        start = match.start()
+        try:
+            data, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list) and all(isinstance(item, dict) for item in data):
+            return text[start : start + end].strip()
+    return None
+
+
 def clean_output_text(output_text: str) -> str:
     text = output_text.strip()
     text = re.sub(r"<think\b[^>]*>.*?</think>\s*", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
-    return text.strip()
+    text = text.strip()
+    return _extract_first_json_array(text) or text
 
 
 def extract_output_string(raw_response: str) -> str:
